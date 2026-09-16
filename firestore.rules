@@ -1,0 +1,37 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null && request.auth.token.email != null; }
+    function email() { return request.auth.token.email.lower(); }
+    function ledger(lid) { return get(/databases/$(database)/documents/ledgers/$(lid)).data; }
+    function isMember(lid) { return signedIn() && email() in ledger(lid).members; }
+    function isOwner(lid) { return signedIn() && request.auth.uid == ledger(lid).owner; }
+
+    // A budget ("ledger"): readable by its members; created by the signed-in user for themselves;
+    // renamed / re-shared / deleted only by its owner.
+    match /ledgers/{lid} {
+      allow read: if signedIn() && email() in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.owner == request.auth.uid
+        && request.resource.data.ownerEmail == email()
+        && request.resource.data.members == [email()];
+      allow update: if isOwner(lid)
+        && request.resource.data.owner == resource.data.owner
+        && request.resource.data.ownerEmail == resource.data.ownerEmail
+        && email() in request.resource.data.members;      // owner can't remove themselves
+      allow delete: if isOwner(lid);
+
+      // Everything inside a budget is fully shared among its members.
+      match /{sub}/{doc} {
+        allow read, write: if isMember(lid);
+      }
+    }
+
+    // Push tokens: each device writes its own, tagged with the signed-in email.
+    match /pushTokens/{token} {
+      allow read, delete: if signedIn() && resource.data.email == email();
+      allow create, update: if signedIn() && request.resource.data.email == email();
+    }
+  }
+}
