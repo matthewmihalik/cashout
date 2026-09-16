@@ -64,6 +64,7 @@ const Theme = {
 
 /* ── Boot ──────────────────────────────────── */
 (function boot(){
+ try {
   document.title = APP_NAME; $('#brandName').textContent = APP_NAME; $('#authTitle').textContent = APP_NAME;
   Theme.apply();
   $('#themeBtn').onclick = () => Theme.toggle();
@@ -82,11 +83,14 @@ const Theme = {
   firebase.initializeApp(FIREBASE_CONFIG);
   store.init();
   Auth.init(user => {
-    if (!user) { $('#auth').hidden = false; $('#app').hidden = true; $('#tabbar').hidden = true; return; }
-    $('#auth').hidden = true; $('#app').hidden = false;
-    store.watchLedgers(Auth.email());
-    Push.listen();
-    App.render();
-    Reminders.tick();
+    try {
+      if (!user) { $('#auth').hidden = false; $('#app').hidden = true; $('#tabbar').hidden = true; if ($('#authMsg').textContent === 'Connecting…') $('#authMsg').textContent = ''; return; }
+      $('#auth').hidden = true; $('#app').hidden = false;
+      store.watchLedgers(Auth.email());
+      Push.listen();
+      App.render();
+      Reminders.tick();
+    } catch(e) { console.error(e); window.__bootShow && window.__bootShow('After sign-in: ' + (e.stack || e.message)); }
   });
+ } catch(e) { console.error(e); window.__bootShow && window.__bootShow('Startup: ' + (e.stack || e.message)); }
 })();
