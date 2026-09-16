@@ -239,6 +239,7 @@ const Settings = {
       <div class="section"><div class="section-head"><h2>Accounts</h2><button class="link" style="background:none" onclick="Accounts.open()">Month-end check-in →</button></div>${Editors.accounts(d)}
         <p class="hint" style="margin-top:8px">Balances here are what the app expects after your deposits. At month end, enter your real balances and the difference (interest, market gains or losses) is added to the linked fund.</p></div>
       <div class="section"><div class="section-head"><h2>Rules</h2></div>${Editors.rules(d)}</div>
+      <div class="section"><div class="section-head"><h2>Appearance</h2></div>${Appearance.renderSection()}</div>
       <div class="section"><div class="section-head"><h2>Reminders on this device</h2></div>
         <div class="card"><p style="font-size:13.5px;color:var(--text-2)">A daily nudge at your reminder hour if nobody has logged tips to this budget yet that day — and a heads-up on close-week day. Works even when the app is closed.</p>
         <div id="notifRow" style="margin-top:10px"></div></div></div>
@@ -257,6 +258,7 @@ const Settings = {
       <div class="status-line">${APP_NAME} · signed in as ${esc(Auth.email()||'')} · <button class="link" style="background:none;color:var(--muted);text-decoration:underline" onclick="Auth.signOut()">Sign out</button></div>`;
     Editors.wire($('#view-settings'), d, structural => { App.dirty = true; if (structural) this.render(); else $('#saveBar').style.display='flex'; });
     Push.renderRow($('#notifRow'));
+    Appearance.wire($('#view-settings'));
   },
   refreshStatus(){},
   async save(){
@@ -374,4 +376,3 @@ const Setup = {
     App.draft = null; App.dirty = false; App.go('home'); toast('Welcome to your ledger');
   },
 };
-
