@@ -108,5 +108,11 @@ const store = {
       if ((doc.entries||[]).some(e=>e.id===id)) { await this.write(`${kind}/${k}`, {month:k, entries:doc.entries.filter(e=>e.id!==id)}); return; }
     }
   },
+  /** Post an income entry into another budget this user belongs to (contributions from a personal budget to a joint one). */
+  async postIncome(lid, entry){
+    const k = monthKey(entry.date); const ref = this.fs.doc(`ledgers/${lid}/income/${k}`);
+    const snap = await ref.get(); const doc = snap.exists ? snap.data() : { month:k, entries:[] };
+    await ref.set({ month:k, entries:[...(doc.entries||[]), entry] });
+  },
   saveLocal(){}, // kept for API compatibility with the settings screen
 };

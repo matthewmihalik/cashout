@@ -40,7 +40,7 @@ const localParts = (tz, d = new Date()) => {
     let body = null, title = APP_NAME;
     for (const l of mine) {
       const s = await getSettings(l.id);
-      if (!s.setupDone || (s.remindHour ?? 21) !== hour) continue;
+      if (!s.setupDone || s.remindEnabled === false || (s.remindHour ?? 21) !== hour) continue;
       if (await loggedToday(l.id, date)) continue;
       const closeDay = dow === (s.closeDay ?? 0);
       title = mine.length > 1 ? `${APP_NAME} · ${l.name}` : APP_NAME;

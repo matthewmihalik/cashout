@@ -7,10 +7,16 @@ const Model = {
   },
   weekStartDate(state){ return state.weekStart ? state.weekStart.slice(0,10) : null; },
 
-  billsWeekly(s){
-    const monthly = sum(s.bills, b=>b.amount);
-    return s.billsMethod === 'annual' ? monthly*12/52 : monthly/4;
+  /** Weekly set-aside for one bill, by its period. Monthly uses the budget's method (÷4 or ×12÷52). */
+  billWeekly(s, b){
+    const a = +b.amount||0; const p = b.period || 'month';
+    if (p === 'week') return a;
+    if (p === 'year') return a/52;
+    return s.billsMethod === 'annual' ? a*12/52 : a/4;
   },
+  billsWeekly(s){ return sum(s.bills, b=>this.billWeekly(s, b)); },
+  /** A bill's monthly equivalent (for the Bills tab totals). */
+  billMonthly(b){ const a = +b.amount||0; const p = b.period || 'month'; return p==='week' ? a*52/12 : p==='year' ? a/12 : a; },
 
   /** Everything the home screen and the close-week screen need. */
   compute(s, state, tips, purchases){
@@ -22,30 +28,40 @@ const Model = {
     const weeklySpent = sum(wPur, p=>p.amount);
     const billsSet = this.billsWeekly(s);
 
+    // Weekly funds: a fixed $ amount, or a % of this week's income
     const funds = s.weeklyFunds.map(f => {
+      const budget = (f.mode === 'pct') ? weeklyTips * ((+f.budget||0)/100) : (+f.budget||0);
       const spent = spentByFund[f.id] || 0;
-      return { ...f, spent, remaining: f.budget - spent, leftover: Math.max(0, f.budget - spent), over: Math.max(0, spent - f.budget) };
+      return { ...f, budget, spent, remaining: budget - spent, leftover: Math.max(0, budget - spent), over: Math.max(0, spent - budget) };
     });
     const totalWeeklyBudget = sum(funds, f=>f.budget);
     const unspent = sum(funds, f=>f.leftover);
     const totalOverdraft = sum(funds, f=>f.over);
-    const totalNeeded = billsSet + totalWeeklyBudget;
+
+    // Long-term funds: fixed $ each week comes off the top (like a bill); % funds split what's left
+    const fixedTotal = sum(s.permFunds.filter(f=>f.mode==='fixed'), f=>f.amount);
+    const totalNeeded = billsSet + fixedTotal + totalWeeklyBudget;
     const directRemainder = Math.max(0, weeklyTips - totalNeeded);
     const shortfall = Math.max(0, totalNeeded - weeklyTips);
     const toPerm = directRemainder + unspent;
 
     const transfers = s.permFunds.map(f => {
-      const pct = (+f.pct||0)/100;
-      return { ...f, fromRemainder: directRemainder*pct, fromUnspent: unspent*pct, total: toPerm*pct, after: (+f.balance||0) + toPerm*pct };
+      const fixed = f.mode === 'fixed';
+      const pct = fixed ? 0 : (+f.pct||0)/100;
+      const total = fixed ? (+f.amount||0) : toPerm*pct;
+      const linked = !!f.linkTo;                       // contribution to another budget: passes through, no balance here
+      return { ...f, fixed, pct, fromRemainder: fixed?0:directRemainder*pct, fromUnspent: fixed?0:unspent*pct, total, linked,
+               after: linked ? (+f.balance||0) : (+f.balance||0) + total };
     });
     const totalTransferred = sum(transfers, t=>t.total);
+    const contributions = transfers.filter(t=>t.linked && t.total>0);
 
     // Overdraft: cover overspend from configured funds in order (default General Savings → Emergency)
     const overdraft = { total: totalOverdraft, draws: [], uncovered: 0 };
     let remaining = totalOverdraft;
     for (const fid of (s.overdraftFrom||[])) {
       if (remaining <= 0) break;
-      const t = transfers.find(x=>x.id===fid); if (!t) continue;
+      const t = transfers.find(x=>x.id===fid); if (!t || t.linked) continue;
       const take = Math.min(Math.max(0, t.after), remaining);
       if (take > 0) { overdraft.draws.push({ id:fid, name:t.name, emoji:t.emoji, amount:take }); t.after -= take; remaining -= take; }
     }
@@ -53,15 +69,15 @@ const Model = {
 
     // Account-level deposits (a fund maps to one real account)
     const accounts = s.accounts.map(a => {
-      const parts = transfers.filter(t=>t.account===a.id);
+      const parts = transfers.filter(t=>t.account===a.id && !t.linked);
       const deposit = sum(parts, p=>p.total);
       return { ...a, parts, deposit, after: (+a.balance||0) + deposit,
         splits: (a.split||[]).filter(x=>+x.pct>0).map(x=>({ ...x, amount: deposit * (+x.pct/100) })) };
     });
 
-    const pctTotal = sum(s.permFunds, f=>f.pct);
-    return { weeklyTips, weeklySpent, wTips, wPur, funds, billsSet, totalWeeklyBudget, totalNeeded, unspent, directRemainder,
-             shortfall, toPerm, transfers, totalTransferred, overdraft, accounts, pctTotal };
+    const pctTotal = sum(s.permFunds.filter(f=>f.mode!=='fixed'), f=>f.pct);
+    return { weeklyTips, weeklySpent, wTips, wPur, funds, billsSet, fixedTotal, totalWeeklyBudget, totalNeeded, unspent, directRemainder,
+             shortfall, toPerm, transfers, totalTransferred, contributions, overdraft, accounts, pctTotal };
   },
 
   /** Bill due status relative to today. Returns daysUntil (negative = overdue) using the original ±2-day rollover rule. */
@@ -95,9 +111,10 @@ const Model = {
       tips: round2(c.weeklyTips), spent: round2(c.weeklySpent), billsSet: round2(c.billsSet), weeklyBudget: round2(c.totalWeeklyBudget),
       unspent: round2(c.unspent), directRemainder: round2(c.directRemainder), toPerm: round2(c.totalTransferred), shortfall: round2(c.shortfall),
       overdraft: round2(c.overdraft.total), overdraftDraws: c.overdraft.draws.map(d=>({id:d.id, amount:round2(d.amount)})), uncovered: round2(c.overdraft.uncovered),
-      transfers: c.transfers.map(t=>({ id:t.id, name:t.name, emoji:t.emoji, amount:round2(t.total) })),
+      transfers: c.transfers.map(t=>({ id:t.id, name:t.name, emoji:t.emoji, amount:round2(t.total), fixed:!!t.fixed, linkTo:t.linkTo||null })),
+      contributions: c.contributions.map(t=>({ id:t.id, name:t.name, emoji:t.emoji, amount:round2(t.total), linkTo:t.linkTo })),
       balances: settings.permFunds.map(f=>({ id:f.id, balance:f.balance })),
-      funds: c.funds.map(f=>({ id:f.id, name:f.name, budget:f.budget, spent:round2(f.spent) })),
+      funds: c.funds.map(f=>({ id:f.id, name:f.name, budget:round2(f.budget), spent:round2(f.spent) })),
       accounts: c.accounts.map(a=>({ id:a.id, name:a.name, institution:a.institution, deposit:round2(a.deposit), before:round2(a.balance), after:round2(a.after),
                                      splits:a.splits.map(x=>({name:x.name, pct:x.pct, amount:round2(x.amount)})) })),
       shifts: c.wTips.length, tipsOnly: round2(sum(c.wTips.filter(t=>(t.type||'tips')==='tips'), t=>t.total)),

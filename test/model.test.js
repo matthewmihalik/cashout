@@ -85,5 +85,35 @@ eq(Model.billDays({dueDay:20}, d), 5, 'bill due in 5 days');
 eq(Model.billDays({dueDay:14}, d), -1, 'bill overdue by 1 day still shows this month');
 eq(Model.billDays({dueDay:10}, d), 25, 'bill 5 days past rolls to next month');
 
+// ── Amount modes ─────────────────────────────────────────────
+const s4 = JSON.parse(JSON.stringify(s));
+s4.permFunds.find(f=>f.id==='travel').mode = 'fixed'; s4.permFunds.find(f=>f.id==='travel').amount = 50;   // $50 off the top
+s4.permFunds.find(f=>f.id==='roth').pct = 60;                                                           // pct funds: roth 60, emerg 15, gen 15, home 5, health 5 = 100
+s4.weeklyFunds.find(f=>f.id==='fun').mode = 'pct'; s4.weeklyFunds.find(f=>f.id==='fun').budget = 5;   // 5% of income = $30
+s4.bills.find(b=>b.id==='util').amount = 20; s4.bills.find(b=>b.id==='util').period = 'week';           // +$20/week
+s4.bills.find(b=>b.id==='ins').amount = 520; s4.bills.find(b=>b.id==='ins').period = 'year';            // +$10/week
+const c4 = Model.compute(s4, state, tips, purchases);
+eq(c4.billsSet, 350, 'bills: monthly ÷4 + weekly + yearly ÷52');
+eq(c4.fixedTotal, 50, 'fixed fund deposit counted');
+eq(c4.funds.find(f=>f.id==='fun').budget, 30, 'pct weekly fund = 5% of $600');
+// needed = 350 + 50 + (80+40+30) = 550 → remainder 50 ; unspent: groc 30, eat 0, fun 20 = 50 ; toPerm 100
+eq(c4.directRemainder, 50, 'remainder after fixed deposits');
+eq(c4.toPerm, 100, 'toPerm with modes');
+eq(c4.transfers.find(t=>t.id==='travel').total, 50, 'fixed fund gets its fixed amount');
+eq(c4.transfers.find(t=>t.id==='roth').total, 60, 'roth gets 60% of the 100');
+eq(c4.pctTotal, 100, 'pct total counts only pct funds');
+
+// ── Linked (contribution) fund ───────────────────────────────
+const s5 = JSON.parse(JSON.stringify(s));
+s5.permFunds.push({ id:'joint', emoji:'🏠', name:'Joint', pct:0, mode:'fixed', amount:120, balance:0, account:'', linkTo:'LEDGER_J' });
+const c5 = Model.compute(s5, state, tips, purchases);
+eq(c5.contributions.length, 1, 'one contribution to post');
+eq(c5.contributions[0].total, 120, 'contribution amount');
+eq(c5.transfers.find(t=>t.id==='joint').after, 0, 'linked fund keeps no balance');
+eq(c5.directRemainder, 130-120, 'fixed contribution reduces remainder');
+const r5 = Model.closeWeek(s5, state, tips, purchases, '2026-09-13T21:00:00');
+eq(r5.settings.permFunds.find(f=>f.id==='joint').balance, 0, 'linked fund balance untouched after close');
+console.log(r5.record.contributions[0].linkTo === 'LEDGER_J' ? 'ok   week record lists the contribution' : 'FAIL record contributions');
+
 console.log(fails ? `\n${fails} FAILED` : '\nall checks passed');
 process.exit(fails ? 1 : 0);

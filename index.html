@@ -21,8 +21,17 @@
 </head>
 <body>
 
+<!-- If any script fails to load or crashes on start, say so instead of showing a blank page -->
+<div id="bootError" class="auth" style="display:none"><div class="auth-card"><h1 style="font-size:22px">Cashout couldn’t start</h1><p id="bootErrorText" style="text-align:left;white-space:pre-wrap;font-family:monospace;font-size:12px"></p><p class="hint">Most often a file is missing or in the wrong folder. Check that <code>js/</code>, <code>css/</code> and <code>icons/</code> sit next to <code>index.html</code> in the repo.</p></div></div>
+<script>
+  (function(){ var shown=false; function show(msg){ if(shown) return; shown=true; var b=document.getElementById('bootError'); if(!b) return; b.style.display='grid'; document.getElementById('bootErrorText').textContent=msg; }
+    window.addEventListener('error', function(e){ var t=e.target; if(t && t.tagName==='SCRIPT') show('Could not load ' + t.getAttribute('src') + ' (404 or blocked).'); else if(e.message) show(e.message + (e.filename ? '\n' + e.filename.split('/').slice(-2).join('/') + ':' + e.lineno : '')); }, true);
+    window.addEventListener('unhandledrejection', function(e){ show(String(e.reason && e.reason.message || e.reason)); });
+    window.__bootShow = show; })();
+</script>
+
 <!-- Sign-in screen (shown until Firebase confirms a user) -->
-<section id="auth" class="auth" hidden>
+<section id="auth" class="auth">
   <div class="auth-card">
     <img src="icons/icon-192.png" alt="" width="64" height="64" style="border-radius:16px">
     <h1 id="authTitle">Cashout</h1>
@@ -34,7 +43,7 @@
       <input class="input" type="password" id="authPass" placeholder="Password (6+ characters)" autocomplete="current-password" minlength="6" required>
       <div class="sheet-actions"><button type="submit" class="btn" id="signInBtn">Sign in</button><button type="button" class="btn ghost" id="signUpBtn">Create account</button></div>
     </form>
-    <p class="hint" id="authMsg"></p>
+    <p class="hint" id="authMsg">Connecting…</p>
   </div>
 </section>
 
@@ -82,5 +91,6 @@
 <script src="js/auth.js"></script>
 <script src="js/push.js"></script>
 <script src="js/app.js"></script>
+<script>if (typeof firebase === "undefined") window.__bootShow("The Firebase library did not load — check your internet connection or an ad/script blocker.");</script>
 </body>
 </html>

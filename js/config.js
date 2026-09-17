@@ -9,12 +9,12 @@ const APP_NAME = 'Cashout';
 
 // 1) Firebase web app config — Firebase console → Project settings → Your apps → SDK setup (Config).
 const FIREBASE_CONFIG = {
-  apiKey:            "AIzaSyBE9y-gaTlmf2mKOp7zfksP-C_-qqbcdV8",
-  authDomain:        "cashout-e46ea.firebaseapp.com",
-  projectId:         "cashout-e46ea",
-  storageBucket:     "cashout-e46ea.firebasestorage.app",
-  messagingSenderId: "191247519989",
-  appId:             "1:191247519989:web:99fa353f09c83564bd75bc",
+  apiKey:            "PASTE_ME",
+  authDomain:        "PASTE_ME.firebaseapp.com",
+  projectId:         "PASTE_ME",
+  storageBucket:     "PASTE_ME.appspot.com",
+  messagingSenderId: "PASTE_ME",
+  appId:             "PASTE_ME",
 };
 
 // 2) Web Push certificate key pair — Firebase console → Project settings → Cloud Messaging → Web configuration.

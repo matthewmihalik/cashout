@@ -67,10 +67,24 @@ const server = http.createServer((req, res) => {
   await page.evaluate(() => Sheet.close()); await page.evaluate(() => App.go('insights')); await page.waitForTimeout(300); await shot('11-insights');
   await page.evaluate(() => App.go('bills')); await page.waitForTimeout(200); await shot('12-bills');
   await page.evaluate(() => App.go('settings')); await page.waitForTimeout(200); await shot('13-settings');
+  await page.click('[data-preset="Mint"]'); await page.waitForTimeout(150); await page.evaluate(() => App.go('home')); await page.waitForTimeout(250); await shot('13b-home-mint');
+  await page.evaluate(() => { Appearance.set(null); App.go('settings'); }); await page.waitForTimeout(200);
   // invite + second budget + switcher
   await page.fill('#inviteEmail', 'partner@example.com'); await page.click('#view-settings form button[type=submit]'); await page.waitForTimeout(300);
   await page.evaluate(() => Ledgers.create()); await page.fill('#sheetLedgerName', 'Jordan’s budget'); await page.click('#sheet form button[type=submit]'); await page.waitForTimeout(500);
   await page.evaluate(() => Ledgers.openSwitcher()); await page.waitForTimeout(200); await shot('14-switcher', false);
+  // link a fund in Matt's budget to Jordan's (as a stand-in joint budget), close Matt's week, expect income in Jordan's
+  await page.evaluate(() => { Sheet.close(); const m = store.ledgers.find(l=>l.name.startsWith('Matt')); store.select(m.id); });
+  await page.waitForTimeout(400); await page.evaluate(() => App.go('settings')); await page.waitForTimeout(300);
+  await page.evaluate(() => { const j = store.ledgers.find(l=>l.name.startsWith('Jordan')); App.draft.permFunds.push({ id:'joint', emoji:'🏠', name:'Joint', pct:0, mode:'fixed', amount:75, balance:0, account:'', linkTo:j.id }); App.dirty = true; Settings.render(); });
+  await page.waitForTimeout(200); await shot('15-settings-modes');
+  await page.evaluate(() => Settings.save()); await page.waitForTimeout(400);
+  await page.evaluate(() => Log.open('tips')); await page.fill('#f-cash', '100'); await page.fill('#f-card', '300'); await page.click('#logSubmit'); await page.waitForTimeout(300);
+  await page.evaluate(() => Close.open()); await page.waitForTimeout(200); await shot('16-close-with-contribution', false);
+  await page.click('#closeBtn'); await page.waitForTimeout(600); await shot('17-close-result-contribution', false);
+  await page.evaluate(() => { Sheet.close(); const j = store.ledgers.find(l=>l.name.startsWith('Jordan')); store.select(j.id); }); await page.waitForTimeout(500);
+  const jointIncome = await page.evaluate(() => store.allTips().map(e=>[e.type, e.total, e.source]));
+  console.log('joint income:', JSON.stringify(jointIncome));
 
   // sanity: state after close
   const state = await page.evaluate(() => ({ ledgers: store.ledgers.map(l=>[l.name, l.members]), weeks: Object.keys(window.__mock.docs).filter(k=>k.includes('/weeks/')).length, income: store.allTips().map(e=>[e.type,e.total]),

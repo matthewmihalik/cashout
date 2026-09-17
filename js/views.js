@@ -44,14 +44,14 @@ document.addEventListener('keydown', e => { if (e.key==='Escape') Sheet.close();
 const fundIcon = (f, extra='') => `<div class="ico ${extra}">${esc(f.emoji||'•')}</div>`;
 const findFund = (s, id) => s.weeklyFunds.find(f=>f.id===id) || s.permFunds.find(f=>f.id===id) || s.bills.find(f=>f.id===id);
 const catLabel = (s, id) => { const f = findFund(s, id); return f ? `${f.emoji||''} ${f.name}`.trim() : id; };
-const incomeLabel = e => (e.type||'tips')==='tips' ? 'Shift tips' : e.type==='wage' ? 'Paycheck' : 'Other income';
+const incomeLabel = e => (e.type||'tips')==='tips' ? 'Shift tips' : e.type==='wage' ? 'Paycheck' : e.type==='contribution' ? 'Contribution' : 'Other income';
 const catKind = (s, id) => s.weeklyFunds.some(f=>f.id===id) ? 'weekly' : s.permFunds.some(f=>f.id===id) ? 'perm' : 'bill';
 
 function notices(s, c){
   const out = [];
   const now = new Date(); const mk = monthKey(todayISO());
-  if (Math.abs(c.pctTotal - 100) > 0.01) out.push({ cls:'warn', icon:ICON.alert, t:`Fund percentages add up to ${round2(c.pctTotal)}%`, d:'They need to total 100% so every leftover dollar has a home.', go:['Fix', "App.go('settings')"] });
-  const due = s.bills.filter(b => +b.amount>0 && !Model.billPaid(b, mk)).map(b=>({b, d:Model.billDays(b, now)})).filter(x=>x.d<=5).sort((a,b)=>a.d-b.d);
+  if (s.permFunds.some(f=>f.mode!=='fixed') && Math.abs(c.pctTotal - 100) > 0.01) out.push({ cls:'warn', icon:ICON.alert, t:`Fund percentages add up to ${round2(c.pctTotal)}%`, d:'They need to total 100% so every leftover dollar has a home.', go:['Fix', "App.go('settings')"] });
+  const due = s.bills.filter(b => +b.amount>0 && (b.period||'month')==='month' && !Model.billPaid(b, mk)).map(b=>({b, d:Model.billDays(b, now)})).filter(x=>x.d<=5).sort((a,b)=>a.d-b.d);
   if (due.length) {
     const worst = due[0].d;
     out.push({ cls: worst<=0?'crit':'warn', icon:ICON.bell, t: due.length===1 ? `${due[0].b.name} ${dueWord(due[0].d)}` : `${due.length} bills due soon`,
@@ -62,7 +62,7 @@ function notices(s, c){
   if (now.getDay() === (s.closeDay??0) && (daysOpen===null || daysOpen>=1)) out.push({ cls:'lilac', icon:ICON.cal, t:'It’s close-week day', d:'Log any last tips and purchases, then close the week to get your transfer checklist.', go:['Close week', 'Close.open()'] });
   else if (daysOpen !== null && daysOpen >= 9) out.push({ cls:'lilac', icon:ICON.cal, t:`This week has been open ${daysOpen} days`, d:'Closing resets your weekly funds and moves leftovers to savings.', go:['Close week', 'Close.open()'] });
   const loggedToday = store.allTips().some(t=>t.date===todayISO() && (t.type||'tips')==='tips');
-  if (!loggedToday && now.getHours() >= (s.remindHour??21) && s.tipsExpected!==false) out.push({ cls:'pink', icon:ICON.spark, t:'No shift logged today yet', d:'Worked tonight? Log your tips now while the numbers are fresh.', go:['Log income', "Log.open('tips')"] });
+  if (!loggedToday && now.getHours() >= (s.remindHour??21) && s.remindEnabled!==false) out.push({ cls:'pink', icon:ICON.spark, t:'No shift logged today yet', d:'Worked tonight? Log your tips now while the numbers are fresh.', go:['Log income', "Log.open('tips')"] });
   const lastDay = new Date(now.getFullYear(), now.getMonth()+1, 0).getDate();
   const acctDone = (store.data.acct?.entries||[]).some(e=>e.month===mk);
   if (now.getDate() >= lastDay-3 && !acctDone && s.accounts.length) out.push({ cls:'pink', icon:ICON.spark, t:'Month-end account check-in', d:'Enter your real account balances so interest and market returns show up in your funds.', go:['Check in', 'Accounts.open()'] });
@@ -94,6 +94,7 @@ const Home = {
         <div class="meter-legend">${parts.map(p=>`<span><i style="background:${p.color}"></i>${p.k}</span>`).join('')}</div>
         <div class="rows">
           <div class="lrow"><span class="k"><i style="background:var(--faint)"></i>Bills set aside (${s.billsMethod==='annual'?'×12 ÷ 52':'÷ 4'})</span><span class="v num">${fmt(c.billsSet)}</span></div>
+          ${c.fixedTotal>0?`<div class="lrow"><span class="k"><i style="background:var(--lilac)"></i>Fixed fund deposits</span><span class="v num">${fmt(c.fixedTotal)}</span></div>`:''}
           <div class="lrow"><span class="k"><i style="background:var(--brass)"></i>Weekly funds filled</span><span class="v num">${fmt(c.totalWeeklyBudget)}</span></div>
           <div class="lrow"><span class="k"><i style="background:var(--brass)"></i>Spent so far</span><span class="v num">${fmt(c.weeklySpent)}</span></div>
           <div class="lrow"><span class="k"><i style="background:var(--lilac)"></i>Unspent from funds</span><span class="v num">${fmt(c.unspent)}</span></div>
@@ -116,7 +117,7 @@ const Home = {
           return `<div class="fund" role="button" tabindex="0" onclick="Log.open('purchase',{category:'${f.id}'})">
             ${fundIcon(f)}
             <div><div class="name">${esc(f.name)}</div><div class="bar"><span class="${cls}" style="width:${pct}%"></span></div>
-              <div class="sub num">${fmt(f.spent)} of ${fmt(f.budget)}</div></div>
+              <div class="sub num">${fmt(f.spent)} of ${fmt(f.budget)}${f.mode==='pct'?` <span style="color:var(--faint)">(${esc(f.budget===0?0:s.weeklyFunds.find(x=>x.id===f.id)?.budget)}% of income)</span>`:''}</div></div>
             <div class="right"><div class="amt num ${f.remaining<0?'neg':''}">${fmt(f.remaining)}</div><div class="tiny">${f.remaining<0?'over':'left'}</div></div>
           </div>`; }).join('') : '<div class="empty"><b>No weekly funds yet</b>Add them in Settings.</div>'}</div>
       </div>
@@ -125,8 +126,8 @@ const Home = {
         <div class="section-head"><h2>Long-term funds</h2><span class="link num">${fmt(sum(s.permFunds,f=>f.balance))} total</span></div>
         <div class="card">${s.permFunds.map(f => { const t = c.transfers.find(x=>x.id===f.id); const acct = s.accounts.find(a=>a.id===f.account);
           return `<div class="fund">${fundIcon(f,'')}
-            <div><div class="name">${esc(f.name)}</div><div class="sub">${esc(f.pct)}% of leftovers${acct?` · ${esc(acct.institution)} ${esc(acct.name)}`:''}</div></div>
-            <div class="right"><div class="amt num">${fmt(f.balance)}</div><div class="tiny num" style="color:var(--lilac)">${t&&t.total>0?fmt(t.total,{plus:true})+' pending':''}</div></div>
+            <div><div class="name">${esc(f.name)}</div><div class="sub">${f.mode==='fixed'?fmt(f.amount)+' each week':esc(f.pct)+'% of leftovers'}${f.linkTo?` · → ${esc(store.ledgers.find(l=>l.id===f.linkTo)?.name||'another budget')}`:acct?` · ${esc(acct.institution)} ${esc(acct.name)}`:''}</div></div>
+            <div class="right"><div class="amt num">${f.linkTo?'<span class="pill lilac">contribution</span>':fmt(f.balance)}</div><div class="tiny num" style="color:var(--lilac)">${t&&t.total>0?fmt(t.total,{plus:true})+' pending':''}</div></div>
           </div>`; }).join('')}</div>
       </div>
 
@@ -274,6 +275,7 @@ const Close = {
       <div class="card" style="padding:12px 14px">
         ${rows('Income this week', fmt(c.weeklyTips))}
         ${rows('Bills set aside', '− '+fmt(c.billsSet))}
+        ${c.fixedTotal>0?rows('Fixed fund deposits', '− '+fmt(c.fixedTotal)):''}
         ${rows('Weekly funds filled', '− '+fmt(c.totalWeeklyBudget))}
         ${rows('Left over from tips', fmt(c.directRemainder))}
         ${rows('Unspent in weekly funds', '+ '+fmt(c.unspent))}
@@ -282,7 +284,7 @@ const Close = {
       ${c.shortfall>0 ? `<div class="notice warn" style="margin-top:10px">${ICON.alert}<div><div class="t">Income came in ${fmt(c.shortfall)} short</div><div class="d">Not enough to cover bills set-aside plus weekly budgets. Only unspent fund money moves to savings this week.</div></div></div>`:''}
       ${c.overdraft.total>0 ? `<div class="notice crit" style="margin-top:10px">${ICON.alert}<div><div class="t">Overspent by ${fmt(c.overdraft.total)}</div><div class="d">${c.overdraft.draws.map(d=>`${fmt(d.amount)} comes out of ${d.name}`).join('; ')}${c.overdraft.uncovered>0?`; ${fmt(c.overdraft.uncovered)} still uncovered`:''}.</div></div></div>`:''}
       <div class="subhead">Fund transfers</div>
-      <div class="card" style="padding:12px 14px">${c.transfers.map(t=>`<div class="kv"><span class="k">${esc(t.emoji)} ${esc(t.name)} <span class="pill muted">${esc(t.pct)}%</span></span><span class="v num">${fmt(t.total,{plus:true})}</span></div>`).join('')}</div>
+      <div class="card" style="padding:12px 14px">${c.transfers.map(t=>`<div class="kv"><span class="k">${esc(t.emoji)} ${esc(t.name)} <span class="pill muted">${t.fixed?'fixed':Math.round(t.pct*100)+'%'}</span>${t.linked?` <span class="pill lilac">→ ${esc(store.ledgers.find(l=>l.id===t.linkTo)?.name||'budget')}</span>`:''}</span><span class="v num">${fmt(t.total,{plus:true})}</span></div>`).join('')}</div>
       <div class="sheet-actions" style="margin-top:14px">
         <button class="btn ghost" onclick="Sheet.close()">Not yet</button>
         <button class="btn lilac" id="closeBtn" onclick="Close.confirm()" ${c.wTips.length===0 && c.wPur.length===0 ? 'disabled':''}>Close week</button>
@@ -298,7 +300,13 @@ const Close = {
       await store.write(`weeks/${r.record.id}`, r.record);
       await store.saveSettings(r.settings);
       await store.saveState(r.state);
-    } catch(e){ btn.disabled=false; return; }
+      for (const t of r.computed.contributions) {
+        const target = store.ledgers.find(l=>l.id===t.linkTo);
+        if (!target) continue;
+        await store.postIncome(t.linkTo, { id: uid(), type:'contribution', date: nowISO.slice(0,10), ts: nowISO, cash:0, card:0, total: round2(t.total),
+          source: `${store.ledger?.name||'a budget'} · ${t.name}`, notes:'', by: Auth.email(), fromLedger: store.ledgerId, weekId: r.record.id });
+      }
+    } catch(e){ console.error(e); btn.disabled=false; return; }
     this.result(r);
   },
   result(r){
@@ -312,10 +320,12 @@ const Close = {
         <label class="checkrow" style="border:0;padding:0 0 8px"><input type="checkbox" id="chk-${i}"><div><b>${esc(a.institution)} · ${esc(a.name)}</b><div class="d">Deposit <b class="num" style="color:var(--text)">${fmt(a.deposit)}</b> · balance ${fmt(a.balance)} → ${fmt(a.after)}</div></div></label>
         ${a.splits.length?a.splits.map(x=>`<div class="kv"><span class="k">↳ ${esc(x.name)} (${esc(x.pct)}%)</span><span class="v num">${fmt(x.amount)}</span></div>`).join(''):''}
         ${a.parts.length>1?a.parts.map(p=>`<div class="kv"><span class="k">${esc(p.emoji)} ${esc(p.name)}</span><span class="v num">${fmt(p.total,{plus:true})}</span></div>`).join(''):''}
-      </div>`).join('') || '<div class="empty">No deposits this week.</div>'}
+      </div>`).join('')}
+      ${c.contributions.map((t,i)=>`<div class="card" style="padding:12px 14px"><label class="checkrow" style="border:0;padding:0"><input type="checkbox" id="chk-c${i}"><div><b>→ ${esc(store.ledgers.find(l=>l.id===t.linkTo)?.name||'Another budget')}</b><div class="d">Move <b class="num" style="color:var(--text)">${fmt(t.total)}</b> to that budget’s account · already recorded there as income</div></div></label></div>`).join('')}
+      ${!acc.length && !c.contributions.length ? '<div class="empty">No deposits this week.</div>' : ''}
       ${c.overdraft.draws.length?`<div class="notice crit" style="margin-top:10px">${ICON.alert}<div><div class="t">Overdraft covered</div><div class="d">${c.overdraft.draws.map(d=>`${fmt(d.amount)} deducted from ${d.name}`).join('; ')}. Move that money back into checking if it isn’t already there.</div></div></div>`:''}
       <div class="subhead">New balances</div>
-      <div class="card" style="padding:12px 14px">${r.settings.permFunds.map(f=>`<div class="kv"><span class="k">${esc(f.emoji)} ${esc(f.name)}</span><span class="v num">${fmt(f.balance)}</span></div>`).join('')}</div>
+      <div class="card" style="padding:12px 14px">${r.settings.permFunds.filter(f=>!f.linkTo).map(f=>`<div class="kv"><span class="k">${esc(f.emoji)} ${esc(f.name)}</span><span class="v num">${fmt(f.balance)}</span></div>`).join('')}</div>
       <div class="sheet-actions" style="margin-top:14px"><button class="btn primary block" onclick="Sheet.close();App.go('home')">Done</button></div>`);
   },
 };
@@ -325,21 +335,21 @@ const Bills = {
   render(){
     const { s, c } = App.ctx(); if (!s) return;
     const mk = monthKey(todayISO()); const now = new Date();
-    const bills = s.bills.map(b=>({...b, days:Model.billDays(b, now), paid:Model.billPaid(b, mk)})).sort((a,b)=> (a.paid-b.paid) || (a.days-b.days));
-    const paidTotal = sum(bills.filter(b=>b.paid), b=>b.amount);
-    const monthly = sum(s.bills, b=>b.amount);
+    const bills = s.bills.map(b=>({...b, monthly:(b.period||'month')==='month', days:(b.period||'month')==='month'?Model.billDays(b, now):99, paid:Model.billPaid(b, mk)})).sort((a,b)=> (a.paid-b.paid) || (a.days-b.days));
+    const paidTotal = sum(bills.filter(b=>b.paid&&b.monthly), b=>b.amount);
+    const monthly = sum(s.bills, b=>Model.billMonthly(b));
     $('#view-bills').innerHTML = `
       <div class="tiles">
-        <div class="tile"><div class="k">Monthly bills</div><div class="v num">${fmtK(monthly)}</div><div class="d">${s.bills.length} bills</div></div>
+        <div class="tile"><div class="k">Bills per month</div><div class="v num">${fmtK(monthly)}</div><div class="d">${s.bills.length} bills · weekly & yearly averaged</div></div>
         <div class="tile"><div class="k">Set aside / week</div><div class="v num">${fmtK(c.billsSet)}</div><div class="d">${s.billsMethod==='annual'?'× 12 ÷ 52':'÷ 4 each week'}</div></div>
         <div class="tile"><div class="k">Paid in ${now.toLocaleDateString('en-US',{month:'short'})}</div><div class="v num">${fmtK(paidTotal)}</div><div class="d">${fmtK(monthly-paidTotal)} to go</div></div>
       </div>
       <div class="section">
         <div class="section-head"><h2>${now.toLocaleDateString('en-US',{month:'long'})}</h2><button class="link" style="background:none" onclick="App.go('settings');setTimeout(()=>document.getElementById('sec-bills')?.scrollIntoView({behavior:'smooth'}),50)">Edit bills</button></div>
         <div class="card list">${bills.length ? bills.map(b=>`<div class="item">
-          <div><div class="t">${esc(b.emoji||'')} ${esc(b.name)} ${b.paid?'<span class="pill good">Paid</span>': b.days<0?'<span class="pill crit">Overdue</span>': b.days<=5?'<span class="pill warn">Due soon</span>':''}</div>
-            <div class="s">Due the ${ordinal(b.dueDay||1)}${b.paid?'':' · '+dueWord(b.days)}</div></div>
-          <div><div class="amt num">${fmt(b.amount)}</div><div class="row-actions">${b.paid
+          <div><div class="t">${esc(b.emoji||'')} ${esc(b.name)} ${!b.monthly?`<span class="pill muted">${b.period==='week'?'weekly':'yearly'}</span>`:b.paid?'<span class="pill good">Paid</span>': b.days<0?'<span class="pill crit">Overdue</span>': b.days<=5?'<span class="pill warn">Due soon</span>':''}</div>
+            <div class="s">${b.monthly ? `Due the ${ordinal(b.dueDay||1)}${b.paid?'':' · '+dueWord(b.days)}` : `${fmt(Model.billWeekly(s,b))} set aside each week`}</div></div>
+          <div><div class="amt num">${fmt(b.amount)}<span class="s" style="display:inline"> /${b.period==='week'?'wk':b.period==='year'?'yr':'mo'}</span></div><div class="row-actions">${!b.monthly ? '' : b.paid
             ? `<button class="btn sm ghost" onclick="Bills.toggle('${b.id}',false)">Undo</button>`
             : `<button class="btn sm primary" onclick="Bills.toggle('${b.id}',true)">Mark paid</button>`}</div></div>
         </div>`).join('') : '<div class="empty"><b>No bills yet</b>Add your monthly bills in Settings and they’ll show up here with due dates.</div>'}</div>

@@ -125,18 +125,28 @@ const Editors = {
   set(d, path, v){ const ks = path.split('.'); const last = ks.pop(); const o = ks.reduce((o,k)=>o[k], d); o[last] = v; },
   del(){ return `<button type="button" class="del" title="Remove">${ICON.trash}</button>`; },
   permFunds(d){
-    const pct = sum(d.permFunds, f=>f.pct);
+    const pctFunds = d.permFunds.filter(f=>f.mode!=='fixed'); const pct = sum(pctFunds, f=>f.pct);
+    const others = (store.ledgers||[]).filter(l=>l.id!==store.ledgerId);
+    const dest = f => `<select class="input" data-bind="permFunds.${d.permFunds.indexOf(f)}.dest" aria-label="Where it goes">
+        <option value="">Where it goes…</option>
+        <optgroup label="Real accounts">${d.accounts.map(a=>`<option value="acct:${a.id}" ${!f.linkTo&&f.account===a.id?'selected':''}>${esc(a.institution)} ${esc(a.name)}</option>`).join('')}</optgroup>
+        ${others.length?`<optgroup label="Another budget (contribution)">${others.map(l=>`<option value="link:${l.id}" ${f.linkTo===l.id?'selected':''}>→ ${esc(l.name)}</option>`).join('')}</optgroup>`:''}
+      </select>`;
     return `<div class="card" id="sec-perm">
       ${d.permFunds.map((f,i)=>`<div class="edit-row" data-list="permFunds" data-i="${i}">
         <input class="input emoji" data-bind="permFunds.${i}.emoji" value="${esc(f.emoji)}" aria-label="Icon" maxlength="4">
         <div class="cols"><input class="input" data-bind="permFunds.${i}.name" value="${esc(f.name)}" placeholder="Fund name" aria-label="Fund name">
-          <div class="cols three">
-            <div class="money"><input class="input num" type="number" step="0.01" data-bind="permFunds.${i}.balance" value="${f.balance}" placeholder="Balance" aria-label="Balance" style="padding-left:28px"></div>
-            <div style="position:relative"><input class="input num" type="number" step="1" min="0" max="100" data-bind="permFunds.${i}.pct" value="${f.pct}" placeholder="%" aria-label="Percent of leftovers" style="padding-right:24px"><span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px">%</span></div>
-            <select class="input" data-bind="permFunds.${i}.account" aria-label="Account"><option value="">No account</option>${d.accounts.map(a=>`<option value="${a.id}" ${f.account===a.id?'selected':''}>${esc(a.institution)} ${esc(a.name)}</option>`).join('')}</select>
-          </div></div>
+          <div class="cols two">
+            ${f.mode==='fixed'
+              ? `<div class="money"><input class="input num" type="number" step="0.01" min="0" data-bind="permFunds.${i}.amount" value="${f.amount||0}" placeholder="Amount" aria-label="Amount each week" style="padding-left:28px"></div>`
+              : `<div style="position:relative"><input class="input num" type="number" step="1" min="0" max="100" data-bind="permFunds.${i}.pct" value="${f.pct}" placeholder="%" aria-label="Percent of leftovers" style="padding-right:24px"><span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px">%</span></div>`}
+            <select class="input" data-bind="permFunds.${i}.mode" aria-label="How it's measured"><option value="pct" ${f.mode!=='fixed'?'selected':''}>of leftovers</option><option value="fixed" ${f.mode==='fixed'?'selected':''}>each week</option></select>
+          </div>
+          ${f.linkTo ? `${dest(f)}<div class="hint">Posts to that budget as income when you close your week.</div>`
+                     : `<div class="cols two">${dest(f)}<div class="money"><input class="input num" type="number" step="0.01" data-bind="permFunds.${i}.balance" value="${f.balance}" placeholder="Balance" aria-label="Balance" style="padding-left:28px"></div></div>`}
+          </div>
         ${this.del()}</div>`).join('')}
-      <div class="pct-sum ${Math.abs(pct-100)<0.01?'ok':'bad'}" id="pctSum">${Math.abs(pct-100)<0.01 ? 'Percentages total 100% ✓' : `Percentages total ${round2(pct)}% — they need to add up to 100%`}</div>
+      <div class="pct-sum ${Math.abs(pct-100)<0.01||!pctFunds.length?'ok':'bad'}" id="pctSum">${!pctFunds.length ? 'No percentage funds — leftovers will have nowhere to go.' : Math.abs(pct-100)<0.01 ? 'Percentages total 100% ✓' : `Percentages total ${round2(pct)}% — they need to add up to 100%`}</div>
       <button type="button" class="btn sm ghost" style="margin-top:10px" data-add="permFunds">${ICON.plus} Add fund</button>
     </div>`;
   },
@@ -144,10 +154,15 @@ const Editors = {
     return `<div class="card" id="sec-weekly">
       ${d.weeklyFunds.map((f,i)=>`<div class="edit-row" data-list="weeklyFunds" data-i="${i}">
         <input class="input emoji" data-bind="weeklyFunds.${i}.emoji" value="${esc(f.emoji)}" aria-label="Icon" maxlength="4">
-        <div class="cols two"><input class="input" data-bind="weeklyFunds.${i}.name" value="${esc(f.name)}" placeholder="Fund" aria-label="Fund name">
-          <div class="money"><input class="input num" type="number" step="1" data-bind="weeklyFunds.${i}.budget" value="${f.budget}" placeholder="per week" aria-label="Weekly budget" style="padding-left:28px"></div></div>
+        <div class="cols"><input class="input" data-bind="weeklyFunds.${i}.name" value="${esc(f.name)}" placeholder="Fund" aria-label="Fund name">
+          <div class="cols two">
+            ${f.mode==='pct'
+              ? `<div style="position:relative"><input class="input num" type="number" step="1" min="0" max="100" data-bind="weeklyFunds.${i}.budget" value="${f.budget}" placeholder="%" aria-label="Percent of income" style="padding-right:24px"><span style="position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px">%</span></div>`
+              : `<div class="money"><input class="input num" type="number" step="1" min="0" data-bind="weeklyFunds.${i}.budget" value="${f.budget}" placeholder="per week" aria-label="Weekly budget" style="padding-left:28px"></div>`}
+            <select class="input" data-bind="weeklyFunds.${i}.mode" aria-label="How it's measured"><option value="fixed" ${f.mode!=='pct'?'selected':''}>$ per week</option><option value="pct" ${f.mode==='pct'?'selected':''}>% of income</option></select>
+          </div></div>
         ${this.del()}</div>`).join('')}
-      <div class="pct-sum">Weekly budgets total <b class="num" id="weeklySum">${fmt(sum(d.weeklyFunds,f=>f.budget))}</b></div>
+      <div class="pct-sum">Fixed budgets total <b class="num" id="weeklySum">${fmt(sum(d.weeklyFunds.filter(f=>f.mode!=='pct'),f=>f.budget))}</b>${d.weeklyFunds.some(f=>f.mode==='pct')?` + ${round2(sum(d.weeklyFunds.filter(f=>f.mode==='pct'),f=>f.budget))}% of income`:''} per week</div>
       <button type="button" class="btn sm ghost" style="margin-top:10px" data-add="weeklyFunds">${ICON.plus} Add weekly fund</button>
     </div>`;
   },
@@ -156,10 +171,11 @@ const Editors = {
       ${d.bills.map((b,i)=>`<div class="edit-row" data-list="bills" data-i="${i}">
         <input class="input emoji" data-bind="bills.${i}.emoji" value="${esc(b.emoji||'')}" aria-label="Icon" maxlength="4">
         <div class="cols"><input class="input" data-bind="bills.${i}.name" value="${esc(b.name)}" placeholder="Bill" aria-label="Bill name">
-          <div class="cols two"><div class="money"><input class="input num" type="number" step="0.01" data-bind="bills.${i}.amount" value="${b.amount}" placeholder="Amount" aria-label="Amount" style="padding-left:28px"></div>
-          <select class="input" data-bind="bills.${i}.dueDay" aria-label="Due day">${Array.from({length:28},(_,k)=>k+1).map(dd=>`<option value="${dd}" ${+b.dueDay===dd?'selected':''}>Due the ${ordinal(dd)}</option>`).join('')}</select></div></div>
+          <div class="cols ${(b.period||'month')==='month'?'three':'two'}"><div class="money"><input class="input num" type="number" step="0.01" data-bind="bills.${i}.amount" value="${b.amount}" placeholder="Amount" aria-label="Amount" style="padding-left:28px"></div>
+          <select class="input" data-bind="bills.${i}.period" aria-label="How often"><option value="month" ${(b.period||'month')==='month'?'selected':''}>per month</option><option value="week" ${b.period==='week'?'selected':''}>per week</option><option value="year" ${b.period==='year'?'selected':''}>per year</option></select>
+          ${(b.period||'month')==='month' ? `<select class="input" data-bind="bills.${i}.dueDay" aria-label="Due day">${Array.from({length:28},(_,k)=>k+1).map(dd=>`<option value="${dd}" ${+b.dueDay===dd?'selected':''}>Due ${ordinal(dd)}</option>`).join('')}</select>` : ''}</div></div>
         ${this.del()}</div>`).join('')}
-      <div class="pct-sum">Monthly total <b class="num" id="billsSum">${fmt(sum(d.bills,b=>b.amount))}</b> · set aside <b class="num" id="billsWeekly">${fmt(Model.billsWeekly(d))}</b> per week</div>
+      <div class="pct-sum">About <b class="num" id="billsSum">${fmt(sum(d.bills,b=>Model.billMonthly(b)))}</b> a month · set aside <b class="num" id="billsWeekly">${fmt(Model.billsWeekly(d))}</b> per week</div>
       <button type="button" class="btn sm ghost" style="margin-top:10px" data-add="bills">${ICON.plus} Add bill</button>
     </div>`;
   },
@@ -189,6 +205,7 @@ const Editors = {
         <div class="field"><label>Close-week day</label><select class="input" data-bind="closeDay">${DOW.map((x,i)=>`<option value="${i}" ${(d.closeDay??0)===i?'selected':''}>${x}</option>`).join('')}</select></div>
         <div class="field"><label>Daily log reminder</label><select class="input" data-bind="remindHour">${Array.from({length:24},(_,h)=>`<option value="${h}" ${(d.remindHour??21)===h?'selected':''}>${h%12||12}${h<12?'am':'pm'}</option>`).join('')}</select></div>
       </div>
+      <label class="checkrow" style="border:0;padding:4px 0 14px"><input type="checkbox" data-bind="remindEnabled" ${d.remindEnabled!==false?'checked':''}><div>Daily shift reminder<div class="d">Turn off for a shared or joint budget that isn’t fed by shifts.</div></div></label>
       <div class="field" style="margin:0"><label>Payment methods</label><input class="input" data-bind="payMethods" value="${esc((d.payMethods||[]).join(', '))}" placeholder="Debit, Credit, Cash"><div class="hint">Comma-separated.</div></div>
     </div>`;
   },
@@ -198,22 +215,29 @@ const Editors = {
       const b = ev.target.dataset.bind; if (!b) return;
       let v = ev.target.value;
       if (ev.target.type==='number') v = v==='' ? 0 : +v;
+      if (ev.target.type==='checkbox') v = ev.target.checked;
       if (b==='payMethods') v = v.split(',').map(x=>x.trim()).filter(Boolean);
       if (b==='closeDay' || b==='remindHour' || b.endsWith('.dueDay')) v = +v;
       if (b.startsWith('overdraftFrom')) { d.overdraftFrom = d.overdraftFrom||[]; }
+      if (b.endsWith('.dest')) {                       // destination dropdown: real account or another budget
+        const f = this.get(d, b.replace(/\.dest$/,''));
+        if (String(v).startsWith('link:')) { f.linkTo = v.slice(5); f.account = ''; } else { f.linkTo = ''; f.account = String(v).replace(/^acct:/,''); }
+        onChange(true); return;
+      }
       this.set(d, b, v);
+      if (b.endsWith('.mode') || b.endsWith('.period')) { onChange(true); return; }   // changes which inputs are shown
       // live sums (no re-render, so focus is kept)
-      const pctEl = $('#pctSum', root); if (pctEl) { const p = sum(d.permFunds,f=>f.pct); pctEl.className = 'pct-sum ' + (Math.abs(p-100)<0.01?'ok':'bad'); pctEl.textContent = Math.abs(p-100)<0.01 ? 'Percentages total 100% ✓' : `Percentages total ${round2(p)}% — they need to add up to 100%`; }
-      const ws = $('#weeklySum', root); if (ws) ws.textContent = fmt(sum(d.weeklyFunds,f=>f.budget));
-      const bs = $('#billsSum', root); if (bs) { bs.textContent = fmt(sum(d.bills,b=>b.amount)); $('#billsWeekly',root).textContent = fmt(Model.billsWeekly(d)); }
+      const pctEl = $('#pctSum', root); if (pctEl) { const p = sum(d.permFunds.filter(f=>f.mode!=='fixed'),f=>f.pct); pctEl.className = 'pct-sum ' + (Math.abs(p-100)<0.01?'ok':'bad'); pctEl.textContent = Math.abs(p-100)<0.01 ? 'Percentages total 100% ✓' : `Percentages total ${round2(p)}% — they need to add up to 100%`; }
+      const ws = $('#weeklySum', root); if (ws) ws.textContent = fmt(sum(d.weeklyFunds.filter(f=>f.mode!=='pct'),f=>f.budget));
+      const bs = $('#billsSum', root); if (bs) { bs.textContent = fmt(sum(d.bills,b=>Model.billMonthly(b))); $('#billsWeekly',root).textContent = fmt(Model.billsWeekly(d)); }
       onChange(false);
     };
     root.onclick = ev => {
       const add = ev.target.closest('[data-add]'); const del = ev.target.closest('.del'); const sp = ev.target.closest('[data-addsplit]');
       if (add) { const k = add.dataset.add; const id = uid();
-        if (k==='permFunds') d.permFunds.push({id, emoji:'💎', name:'', pct:0, balance:0, account:''});
-        if (k==='weeklyFunds') d.weeklyFunds.push({id, emoji:'🧺', name:'', budget:0});
-        if (k==='bills') d.bills.push({id, emoji:'🧾', name:'', amount:0, dueDay:1});
+        if (k==='permFunds') d.permFunds.push({id, emoji:'💎', name:'', pct:0, mode:'pct', amount:0, balance:0, account:'', linkTo:''});
+        if (k==='weeklyFunds') d.weeklyFunds.push({id, emoji:'🧺', name:'', budget:0, mode:'fixed'});
+        if (k==='bills') d.bills.push({id, emoji:'🧾', name:'', amount:0, period:'month', dueDay:1});
         if (k==='accounts') d.accounts.push({id, name:'', institution:'', balance:0, earningsTo:'', split:[]});
         onChange(true); }
       else if (sp) { const a = d.accounts[+sp.dataset.addsplit]; a.split = a.split||[]; a.split.push({name:'', pct:0}); onChange(true); }
@@ -233,8 +257,8 @@ const Settings = {
       <div id="saveBar" style="position:sticky;top:64px;z-index:15;display:${App.dirty?'flex':'none'};gap:8px;align-items:center;background:var(--surface-3);border:1px solid var(--border-strong);border-radius:12px;padding:10px 12px;margin-bottom:12px;box-shadow:var(--shadow)">
         <span style="font-size:13.5px;font-weight:600;flex:1">Unsaved changes</span>
         <button class="btn sm ghost" onclick="Settings.discard()">Discard</button><button class="btn sm primary" onclick="Settings.save()">Save</button></div>
-      <div class="section" style="margin-top:0"><div class="section-head"><h2>Long-term funds</h2><span class="link" style="color:var(--muted);font-weight:500">% of leftovers · balance · account</span></div>${Editors.permFunds(d)}</div>
-      <div class="section"><div class="section-head"><h2>Weekly funds</h2><span class="link" style="color:var(--muted);font-weight:500">budget per week</span></div>${Editors.weeklyFunds(d)}</div>
+      <div class="section" style="margin-top:0"><div class="section-head"><h2>Long-term funds</h2><span class="link" style="color:var(--muted);font-weight:500">share · where it goes · balance</span></div>${Editors.permFunds(d)}</div>
+      <div class="section"><div class="section-head"><h2>Weekly funds</h2><span class="link" style="color:var(--muted);font-weight:500">$ per week or % of income</span></div>${Editors.weeklyFunds(d)}</div>
       <div class="section"><div class="section-head"><h2>Monthly bills</h2></div>${Editors.bills(d)}</div>
       <div class="section"><div class="section-head"><h2>Accounts</h2><button class="link" style="background:none" onclick="Accounts.open()">Month-end check-in →</button></div>${Editors.accounts(d)}
         <p class="hint" style="margin-top:8px">Balances here are what the app expects after your deposits. At month end, enter your real balances and the difference (interest, market gains or losses) is added to the linked fund.</p></div>
@@ -262,11 +286,11 @@ const Settings = {
   },
   refreshStatus(){},
   async save(){
-    const d = App.draft; const p = sum(d.permFunds, f=>f.pct);
+    const d = App.draft; const p = sum(d.permFunds.filter(f=>f.mode!=='fixed'), f=>f.pct);
     if (Math.abs(p-100) > 0.01 && !confirm(`Fund percentages total ${round2(p)}%, not 100%. Save anyway?`)) return;
-    d.permFunds.forEach(f=>{ f.pct=+f.pct||0; f.balance=round2(f.balance); f.name=f.name.trim()||'Fund'; });
+    d.permFunds.forEach(f=>{ f.pct=+f.pct||0; f.amount=round2(f.amount); f.balance=round2(f.balance); f.name=f.name.trim()||'Fund'; f.mode=f.mode==='fixed'?'fixed':'pct'; });
     d.weeklyFunds.forEach(f=>{ f.budget=round2(f.budget); f.name=f.name.trim()||'Fund'; });
-    d.bills.forEach(b=>{ b.amount=round2(b.amount); b.name=b.name.trim()||'Bill'; b.dueDay=+b.dueDay||1; });
+    d.bills.forEach(b=>{ b.amount=round2(b.amount); b.name=b.name.trim()||'Bill'; b.dueDay=+b.dueDay||1; b.period=b.period||'month'; });
     d.accounts.forEach(a=>{ a.balance=round2(a.balance); a.split=(a.split||[]).filter(x=>x.name||+x.pct); });
     d.overdraftFrom = (d.overdraftFrom||[]).filter(Boolean);
     await store.saveSettings(d); App.dirty=false; App.draft=null; toast('Settings saved'); this.render();
@@ -320,7 +344,7 @@ const Reminders = {
   async enable(){ try { await Notification.requestPermission(); } catch(e){} this.renderRow($('#notifRow')); this.tick(); },
   lastKey: null,
   tick(){
-    const s = store.settings; if (!s || !('Notification' in window) || Notification.permission!=='granted') return;
+    const s = store.settings; if (!s || s.remindEnabled===false || !('Notification' in window) || Notification.permission!=='granted') return;
     const now = new Date(); const key = todayISO()+'-'+now.getHours();
     if (now.getHours() !== (s.remindHour??21) || this.lastKey === key) return;
     this.lastKey = key;
@@ -349,15 +373,15 @@ const Setup = {
       </div>
       <p class="hint">Takes about three minutes. You’ll enter today’s balances so the ledger starts where you are.</p>
       ${nav('Set up my ledger')}`;
-    if (step==='perm') body = `${bar}<div class="hero-copy"><h2>Long-term funds</h2><p>What share of leftovers each fund gets, and its balance today. Percentages must add up to 100.</p></div><div style="margin-top:14px">${Editors.permFunds(d)}</div>${nav()}`;
-    if (step==='weekly') body = `${bar}<div class="hero-copy"><h2>Weekly spending funds</h2><p>How much you give yourself for each category every week. Unspent money rolls into long-term funds at close.</p></div><div style="margin-top:14px">${Editors.weeklyFunds(d)}</div>${nav()}`;
+    if (step==='perm') body = `${bar}<div class="hero-copy"><h2>Long-term funds</h2><p>Each fund takes either a share of what’s left over or a fixed amount every week. Percentages must add up to 100. A fund can also point at another budget — that’s how a joint budget gets fed.</p></div><div style="margin-top:14px">${Editors.permFunds(d)}</div>${nav()}`;
+    if (step==='weekly') body = `${bar}<div class="hero-copy"><h2>Weekly spending funds</h2><p>How much you give yourself for each category — a set amount, or a percentage of the week’s income. Unspent money rolls into long-term funds at close.</p></div><div style="margin-top:14px">${Editors.weeklyFunds(d)}</div>${nav()}`;
     if (step==='bills') body = `${bar}<div class="hero-copy"><h2>Monthly bills</h2><p>These set the weekly amount held back from tips, and you’ll get reminders before due dates.</p></div><div style="margin-top:14px">${Editors.bills(d)}</div>${nav()}`;
     if (step==='accounts') body = `${bar}<div class="hero-copy"><h2>Real accounts</h2><p>Where the long-term money actually lives. Each week’s checklist tells you exactly how much to deposit into each one.</p></div><div style="margin-top:14px">${Editors.accounts(d)}</div>${nav('Finish')}`;
     if (step==='done') {
       const c = Model.compute(d, {weekStart:null}, [], []);
       body = `<div class="hero-copy"><h2>Ready to log.</h2><p>Here’s a typical week with these settings:</p></div>
         <div class="card" style="margin-top:14px;padding:12px 14px">
-          <div class="kv"><span class="k">Bills set aside each week</span><span class="v num">${fmt(c.billsSet)}</span></div>
+          <div class="kv"><span class="k">Bills set aside each week</span><span class="v num">${fmt(c.billsSet)}</span></div>${c.fixedTotal>0?`<div class="kv"><span class="k">Fixed weekly fund deposits</span><span class="v num">${fmt(c.fixedTotal)}</span></div>`:''}
           <div class="kv"><span class="k">Weekly funds to fill</span><span class="v num">${fmt(c.totalWeeklyBudget)}</span></div>
           <div class="kv total"><span class="k">Tips needed to break even</span><span class="v num">${fmt(c.totalNeeded)}</span></div>
           <div class="kv"><span class="k">Long-term balances today</span><span class="v num">${fmt(sum(d.permFunds,f=>f.balance))}</span></div>
@@ -371,8 +395,9 @@ const Setup = {
   go(i){ App.setupStep = Math.max(0, Math.min(this.steps.length-1, i)); window.scrollTo({top:0}); this.render(); },
   async finish(){
     const d = App.draft; d.setupDone = true; d.createdAt = new Date().toISOString();
-    d.permFunds.forEach(f=>{ f.pct=+f.pct||0; f.balance=round2(f.balance); }); d.accounts.forEach(a=>{ a.balance=round2(a.balance); a.split=(a.split||[]).filter(x=>x.name||+x.pct); });
+    d.permFunds.forEach(f=>{ f.pct=+f.pct||0; f.amount=round2(f.amount); f.balance=round2(f.balance); f.mode=f.mode==='fixed'?'fixed':'pct'; }); d.bills.forEach(b=>{ b.period=b.period||'month'; }); d.accounts.forEach(a=>{ a.balance=round2(a.balance); a.split=(a.split||[]).filter(x=>x.name||+x.pct); });
     try { await store.saveSettings(d); if (!store.state.weekStart) await store.saveState({ weekStart: new Date().toISOString().replace(/Z$/,''), weekCount:0 }); } catch(e){ return; }
     App.draft = null; App.dirty = false; App.go('home'); toast('Welcome to your ledger');
   },
 };
+

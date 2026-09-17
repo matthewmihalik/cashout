@@ -71,13 +71,22 @@ Settings → **This budget** → type an email → **Invite**. When that person 
 
 ## Changing the name or colors
 
+- Accent colors: in the app, **Settings → Appearance** — presets or custom pickers, saved per device. The defaults below only matter for the sign-in screen and anyone who hasn't picked.
 - Name: `APP_NAME` in `js/config.js`, plus `name`/`short_name` in `manifest.webmanifest` and the `<title>` in `index.html`.
 - Colors: the token block at the top of `css/app.css` (`--pink`, `--lilac`, `--brass`, and the light-mode copies further down).
 - Default funds, bills and accounts for new budgets: `DEFAULTS()` in `js/util.js`.
 
+## Joint budgets
+
+Every budget is its own ledger. To feed a shared one: create it (e.g. "Joint"), invite your partner, then in each personal budget add a long-term fund whose destination is **→ Joint** (a fixed amount each week or a percentage of leftovers). When you close your personal week, that amount is posted into Joint as income labeled "Contribution", and Joint runs its own bills, weekly funds and long-term funds on it. Turn off Joint's daily shift reminder under Rules.
+
+## Amount modes
+
+Every amount has a dropdown: long-term funds are a % of leftovers or a fixed $ each week (fixed comes off the top like a bill); weekly funds are $ per week or % of the week's income; bills are per month (with a due day), per week, or per year — all converted to a weekly set-aside.
+
 ## How the math works (same rules as the original spreadsheet)
 
-Each week: **income − (monthly bills ÷ 4) − (sum of weekly budgets) = leftover**. Anything unspent inside the weekly funds is added to that leftover, and the total is split across long-term funds by their percentages. If a weekly fund goes over budget, the overspend is covered from the funds you pick in Rules (General Savings, then Emergency, by default). Each long-term fund maps to a real account, so the close-week checklist tells you exactly what to deposit where — including an optional deposit split (e.g. 80/20 domestic/international for a Roth). At month end you enter real account balances; the difference from what the app expected is booked as interest or market movement into the linked fund.
+Each week: **income − bills set-aside − fixed fund deposits − weekly budgets = leftover**. Anything unspent inside the weekly funds is added to that leftover, and the total is split across long-term funds by their percentages. If a weekly fund goes over budget, the overspend is covered from the funds you pick in Rules (General Savings, then Emergency, by default). Each long-term fund maps to a real account, so the close-week checklist tells you exactly what to deposit where — including an optional deposit split (e.g. 80/20 domestic/international for a Roth). At month end you enter real account balances; the difference from what the app expected is booked as interest or market movement into the linked fund.
 
 ## Running the tests
 
