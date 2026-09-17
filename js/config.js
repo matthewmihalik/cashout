@@ -19,7 +19,7 @@ const FIREBASE_CONFIG = {
 
 // 2) Web Push certificate key pair — Firebase console → Project settings → Cloud Messaging → Web configuration.
 //    Leave as "" to disable push notifications (in-app reminder banners still work).
-const VAPID_PUBLIC_KEY = "";
+const VAPID_PUBLIC_KEY = "BIuDp7KwRe5n0MuXQ1g3qwbpAdfGsxtQSsJs_pF9hzqU_DkgRpYK_zkw-xrK0st6zb3GKMh71SE4PnmTloHk3Jw";
 
 // Optional: restrict sign-ups to these email domains (e.g. ["gmail.com"]). Empty = anyone can create an account,
 // but they only ever see a ledger they were invited to (or a brand-new empty one of their own).
