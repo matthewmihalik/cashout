@@ -78,7 +78,7 @@ Settings → **This budget** → type an email → **Invite**. When that person 
 
 ## Joint budgets
 
-Every budget is its own ledger. To feed a shared one: create it (e.g. "Joint"), invite your partner, then in each personal budget add a long-term fund whose destination is **→ Joint** (a fixed amount each week or a percentage of leftovers). When you close your personal week, that amount is posted into Joint as income labeled "Contribution", and Joint runs its own bills, weekly funds and long-term funds on it. Turn off Joint's daily shift reminder under Rules.
+From your own budget: **Settings → Joint budget → Start a joint budget**. Name it, enter your partner's email, and set your weekly contribution (a fixed amount or a % of leftovers). That sends an invitation — nothing is created yet. Your partner sees it on their Home screen, sets their own contribution, and taps **Accept & create**. At that moment the joint budget is created with both of you as owners, and each of your personal budgets gets a "→ Joint" fund. Declining creates nothing. When you close a personal week, that fund's amount is posted into the joint budget as income labeled "Contribution", and the joint budget runs its own bills, weekly funds and long-term funds on it.
 
 ## Amount modes
 

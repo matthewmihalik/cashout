@@ -13,9 +13,10 @@ const Ledgers = {
     Sheet.open(`
       <h2>Budgets</h2><p class="lead">Each budget is its own ledger — separate funds, bills and history. Switch, or start one for someone else.</p>
       <div class="card list">${store.ledgers.map(l => `<div class="item" role="button" tabindex="0" onclick="Sheet.close();store.select('${l.id}');App.go('home')">
-        <div><div class="t">${esc(l.name)} ${l.id===store.ledgerId?'<span class="pill pink">Open</span>':''}</div><div class="s">${l.members.length===1?'just you':l.members.length+' people'} · ${l.owner===Auth.uid()?'yours':'shared by '+esc(l.ownerEmail||'')}</div></div>
+        <div><div class="t">${esc(l.name)} ${l.id===store.ledgerId?'<span class="pill pink">Open</span>':''}</div><div class="s">${l.joint?'joint · ':''}${l.members.length===1?'just you':l.members.length+' people'} · ${(l.owner===Auth.uid()||(l.admins||[]).includes(Auth.email()))?'yours':'shared by '+esc(l.ownerEmail||'')}</div></div>
         <div class="amt">›</div></div>`).join('')}</div>
-      <div class="sheet-actions" style="margin-top:14px"><button class="btn ghost" onclick="Sheet.close()">Close</button><button class="btn primary" onclick="Ledgers.create()">${ICON.plus} New budget</button></div>`);
+      ${Joint.pendingForMe().map(i=>`<div class="notice pink" style="margin-top:10px">${ICON.spark}<div><div class="t">Invitation: “${esc(i.name)}”</div><div class="d">from ${esc(i.fromName||i.fromEmail)}</div></div><button class="btn sm go" onclick="Joint.review('${i.id}')">Review</button></div>`).join('')}
+      <div class="sheet-actions" style="margin-top:14px"><button class="btn ghost" onclick="Sheet.close()">Close</button><button class="btn" onclick="Joint.start()">Joint budget</button><button class="btn primary" onclick="Ledgers.create()">${ICON.plus} New budget</button></div>`);
   },
   renderFirstRun(){
     const first = (Auth.name()||'').split(' ')[0] || 'My';
@@ -26,6 +27,7 @@ const Ledgers = {
           <div class="field"><label for="newLedgerName">Budget name</label><input class="input" id="newLedgerName" value="${esc(first)}’s budget" required></div>
           <button class="btn primary block" type="submit">Create budget</button>
         </form>
+        ${Joint.pendingForMe().map(i=>`<div class="notice pink" style="margin-top:14px">${ICON.spark}<div><div class="t">${esc(i.fromName||i.fromEmail)} invited you to “${esc(i.name)}”</div><div class="d">A joint budget — you can accept now and make your own budget later.</div></div><button class="btn sm go" onclick="Joint.review('${i.id}')">Review</button></div>`).join('')}
         <p class="hint" style="margin-top:14px">Were you invited to someone’s budget? Make sure you signed in with the same email they used — it will show up here automatically.</p>
         <p class="hint" style="margin-top:6px">Signed in as ${esc(Auth.email())} · <button class="link" style="background:none;color:var(--muted);text-decoration:underline" onclick="Auth.signOut()">Sign out</button></p>
       </div>`;
@@ -54,6 +56,106 @@ const Ledgers = {
   },
 };
 
+
+
+/* ── Joint budgets: invite → accept → the joint ledger is created and both personal budgets get a contribution fund ── */
+const Joint = {
+  contribFields(prefix, def={mode:'fixed', value:100}){
+    return `<div class="grid2">
+      <div class="field"><label for="${prefix}Val">Your contribution</label>
+        <div class="money" id="${prefix}Money" ${def.mode==='pct'?'hidden':''}><input class="input num" type="number" step="1" min="0" id="${prefix}Val" value="${def.mode==='pct'?'':def.value}" placeholder="0"></div>
+        <div style="position:relative" id="${prefix}Pct" ${def.mode==='pct'?'':'hidden'}><input class="input num" type="number" step="1" min="0" max="100" id="${prefix}ValPct" value="${def.mode==='pct'?def.value:''}" placeholder="0"><span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);color:var(--muted)">%</span></div></div>
+      <div class="field"><label for="${prefix}Mode">Measured as</label><select class="input" id="${prefix}Mode"><option value="fixed" ${def.mode!=='pct'?'selected':''}>$ each week</option><option value="pct" ${def.mode==='pct'?'selected':''}>% of leftovers</option></select></div>
+    </div>`;
+  },
+  wireContrib(sheet, prefix){ $('#'+prefix+'Mode', sheet).onchange = ev => { const pct = ev.target.value==='pct'; $('#'+prefix+'Money').hidden = pct; $('#'+prefix+'Pct').hidden = !pct; }; },
+  readContrib(prefix){ const mode = $('#'+prefix+'Mode').value; const value = round2(mode==='pct' ? $('#'+prefix+'ValPct').value : $('#'+prefix+'Val').value); return { mode, value }; },
+  fund(name, linkTo, c, tag){ return { id: uid(), emoji:'🏠', name, pct: c.mode==='pct' ? c.value : 0, mode: c.mode, amount: c.mode==='fixed' ? c.value : 0, balance:0, account:'', linkTo, tag }; },
+
+  /* Step 1 — sender */
+  start(){
+    Sheet.open(`
+      <h2>Start a joint budget</h2>
+      <p class="lead">It won’t exist until they accept. When they do, you’ll both be owners, and each of your personal budgets gets a fund that sends money into it every week.</p>
+      <form onsubmit="event.preventDefault();Joint.send()">
+        <div class="field"><label for="jName">Name</label><input class="input" id="jName" value="Joint" required></div>
+        <div class="field"><label for="jEmail">Who with</label><input class="input" type="email" id="jEmail" placeholder="partner@example.com" required autocomplete="off"></div>
+        ${this.contribFields('jC')}
+        <p class="hint">This comes out of <b>${esc(store.ledger?.name||'this budget')}</b> when you close its week. They’ll set their own amount when they accept.</p>
+        <div class="sheet-actions" style="margin-top:14px"><button type="button" class="btn ghost" onclick="Sheet.close()">Cancel</button><button type="submit" class="btn primary" id="jSend">Send invitation</button></div>
+      </form>`, sheet => { this.wireContrib(sheet, 'jC'); setTimeout(()=>$('#jEmail')?.focus(), 80); });
+  },
+  async send(){
+    const name = $('#jName').value.trim(); const toEmail = $('#jEmail').value.trim().toLowerCase(); const c = this.readContrib('jC');
+    if (!name || !toEmail) return;
+    if (toEmail === Auth.email()) { toast('That’s your own email'); return; }
+    if (store.invites.some(i => i.status==='pending' && i.toEmail===toEmail && i.fromEmail===Auth.email())) { toast('You already have an invitation out to them'); return; }
+    $('#jSend').disabled = true;
+    try {
+      await store.createInvite({ kind:'joint', name, fromEmail: Auth.email(), fromUid: Auth.uid(), fromName: Auth.name(), fromLedger: store.ledgerId, fromLedgerName: store.ledger?.name||'', toEmail, contribution: c });
+      Sheet.close(); toast(`Invitation sent to ${toEmail}`); App.render();
+    } catch(e){ console.error(e); $('#jSend').disabled = false; toast('Could not send — try again'); }
+  },
+  async cancel(id){ if (!confirm('Cancel this invitation?')) return; await store.deleteInvite(id); toast('Invitation cancelled'); },
+
+  /* Step 2 — recipient */
+  pendingForMe(){ return store.invites.filter(i => i.status==='pending' && i.toEmail===Auth.email()); },
+  pendingFromMe(){ return store.invites.filter(i => i.status==='pending' && i.fromEmail===Auth.email()); },
+  review(id){
+    const inv = store.invites.find(i=>i.id===id); if (!inv) return;
+    const mine = store.ledgers.filter(l => !l.joint);
+    const cDesc = inv.contribution?.mode==='pct' ? `${inv.contribution.value}% of their leftovers` : `${fmt(inv.contribution?.value||0)} each week`;
+    Sheet.open(`
+      <h2>Joint budget invitation</h2>
+      <p class="lead"><b>${esc(inv.fromName||inv.fromEmail)}</b> wants to start <b>“${esc(inv.name)}”</b> with you. They’ll put in ${cDesc} from ${esc(inv.fromLedgerName||'their budget')}. Accepting creates the budget with both of you as owners.</p>
+      <form onsubmit="event.preventDefault();Joint.accept('${inv.id}')">
+        ${mine.length ? `<div class="field"><label for="jFrom">Contribute from</label><select class="input" id="jFrom">${mine.map(l=>`<option value="${l.id}" ${l.id===store.ledgerId?'selected':''}>${esc(l.name)}</option>`).join('')}</select></div>` : `<p class="hint">You don’t have a personal budget yet — you can add your contribution later from Settings.</p>`}
+        ${mine.length ? this.contribFields('aC', inv.contribution||{mode:'fixed',value:100}) : ''}
+        <div class="sheet-actions" style="margin-top:14px"><button type="button" class="btn danger" onclick="Joint.decline('${inv.id}')">Decline</button><button type="submit" class="btn primary" id="jAccept">Accept & create</button></div>
+      </form>`, sheet => { if (mine.length) this.wireContrib(sheet, 'aC'); });
+  },
+  async decline(id){ if (!confirm('Decline this invitation? Nothing will be created.')) return; await store.updateInvite(id, { status:'declined', respondedAt:new Date().toISOString() }); Sheet.close(); toast('Declined'); },
+  async accept(id){
+    const inv = store.invites.find(i=>i.id===id); if (!inv) return;
+    const btn = $('#jAccept'); btn.disabled = true;
+    try {
+      const lid = await store.createJointLedger(inv.name, inv, Auth.email(), Auth.uid());
+      const fromSel = $('#jFrom');
+      if (fromSel) { const c = this.readContrib('aC'); if (c.value > 0) await store.addContributionFund(fromSel.value, this.fund(inv.name, lid, c, inv.id+':to')); }
+      await store.updateInvite(id, { status:'accepted', ledgerId: lid, respondedAt: new Date().toISOString(), toName: Auth.name() });
+      Sheet.close(); toast(`“${inv.name}” created — set it up`);
+      App.draft = null; App.dirty = false; App.setupStep = 0;
+      store.select(lid); App.go('home');
+    } catch(e){ console.error(e); btn.disabled = false; toast('Could not create the joint budget'); }
+  },
+
+  /* Step 3 — sender's app finishes the link when it sees the acceptance */
+  linking: false,
+  async onInvitesChanged(){
+    if (this.linking) return;
+    const done = store.invites.filter(i => i.status==='accepted' && i.fromEmail===Auth.email() && i.ledgerId && !i.linked);
+    for (const inv of done) {
+      this.linking = true;
+      try {
+        const c = inv.contribution || {mode:'fixed', value:0};
+        if (c.value > 0 && inv.fromLedger) await store.addContributionFund(inv.fromLedger, this.fund(inv.name, inv.ledgerId, c, inv.id+':from'));
+        await store.updateInvite(inv.id, { linked: true });
+        toast(`${inv.toName||inv.toEmail} accepted — “${inv.name}” is ready`);
+      } catch(e){ console.error(e); }
+      this.linking = false;
+    }
+    const declined = store.invites.filter(i => i.status==='declined' && i.fromEmail===Auth.email() && !i.seen);
+    for (const inv of declined) { try { await store.updateInvite(inv.id, { seen:true }); toast(`${inv.toEmail} declined “${inv.name}”`); } catch(e){} }
+  },
+  renderSettings(){
+    const out = this.pendingFromMe().filter(i=>i.fromLedger===store.ledgerId);
+    return `<div class="card">
+      <p style="font-size:13.5px;color:var(--text-2)">A joint budget is a full budget of its own, fed by a weekly contribution from each of your personal budgets. Invite someone; it’s created the moment they accept.</p>
+      ${out.map(i=>`<div class="member" style="margin-top:10px"><span class="who">Waiting for <b>${esc(i.toEmail)}</b> to accept “${esc(i.name)}”</span><button class="btn sm ghost" onclick="Joint.cancel('${i.id}')">Cancel</button></div>`).join('')}
+      <button class="btn primary" style="margin-top:12px" onclick="Joint.start()">${ICON.plus} Start a joint budget</button>
+    </div>`;
+  },
+};
 
 /* ── Appearance: per-device accent colors. The whole neutral palette is derived from the accent's hue. ── */
 const Appearance = {
@@ -156,6 +258,7 @@ const Theme = {
       if (!user) { $('#auth').hidden = false; $('#app').hidden = true; $('#tabbar').hidden = true; if ($('#authMsg').textContent === 'Connecting…') $('#authMsg').textContent = ''; return; }
       $('#auth').hidden = true; $('#app').hidden = false;
       store.watchLedgers(Auth.email());
+      store.watchInvites(Auth.email());
       Push.listen();
       App.render();
       Reminders.tick();

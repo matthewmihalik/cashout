@@ -14,6 +14,8 @@
 const store = {
   fs: null, mode: 'loading',
   ledgers: [],            // all ledgers this user can see
+  invites: [],            // joint-budget invitations sent to or by this user
+  inviteUnsubs: [],
   ledgerId: null, ledger: null,
   data: { settings:null, state:null, income:{}, purchases:{}, weeks:{}, acct:null },
   listeners: new Set(), unsubs: [], ledgerUnsub: null,
@@ -35,6 +37,28 @@ const store = {
       const pick = this.ledgers.find(l=>l.id===this.ledgerId) || this.ledgers.find(l=>l.id===remembered) || this.ledgers[0];
       if (pick.id !== this.ledgerId) this.select(pick.id); else { this.ledger = pick; this.emit(); }
     }, e => { console.error(e); toast('Could not load your budgets — check your connection'); });
+  },
+  watchInvites(email){
+    this.inviteUnsubs.forEach(u=>u()); this.inviteUnsubs = [];
+    const merge = () => { const m = {}; [...(this._invTo||[]), ...(this._invFrom||[])].forEach(i => m[i.id] = i); this.invites = Object.values(m); this.emit(); Joint.onInvitesChanged(); };
+    this.inviteUnsubs.push(this.fs.collection('invites').where('toEmail','==',email).onSnapshot(q => { this._invTo = q.docs.map(d=>({id:d.id, ...d.data()})); merge(); }, e=>console.warn(e)));
+    this.inviteUnsubs.push(this.fs.collection('invites').where('fromEmail','==',email).onSnapshot(q => { this._invFrom = q.docs.map(d=>({id:d.id, ...d.data()})); merge(); }, e=>console.warn(e)));
+  },
+  async createInvite(inv){ const ref = await this.fs.collection('invites').add({ ...inv, status:'pending', createdAt: new Date().toISOString() }); return ref.id; },
+  async updateInvite(id, patch){ await this.fs.doc(`invites/${id}`).update(patch); },
+  async deleteInvite(id){ await this.fs.doc(`invites/${id}`).delete(); },
+  /** The invitee creates the joint ledger; both people are members and admins. */
+  async createJointLedger(name, inv, myEmail, myUid){
+    const ref = await this.fs.collection('ledgers').add({ name, owner: myUid, ownerEmail: myEmail, admins: [myEmail, inv.fromEmail], members: [myEmail, inv.fromEmail], inviteId: inv.id, joint: true, createdAt: new Date().toISOString() });
+    return ref.id;
+  },
+  /** Add a contribution fund to a ledger's settings (the current one, or another this user belongs to). */
+  async addContributionFund(ledgerId, fund){
+    const ref = this.fs.doc(`ledgers/${ledgerId}/data/settings`);
+    const snap = await ref.get(); if (!snap.exists) return false;
+    const s = snap.data(); s.permFunds = s.permFunds || [];
+    if (s.permFunds.some(f => fund.tag ? f.tag === fund.tag : f.linkTo === fund.linkTo)) return true;
+    s.permFunds.push(fund); await ref.set(s); return true;
   },
   async createLedger(name, email, uid){
     const ref = await this.fs.collection('ledgers').add({ name: name || 'My budget', owner: uid, ownerEmail: email, members:[email], createdAt: new Date().toISOString() });
@@ -67,7 +91,7 @@ const store = {
       const o = {}; q.docs.forEach(d => { o[d.id] = d.data(); }); this.data[name] = o; ready[name]=true; check(); }, onErr));
     coll('income'); coll('purchases'); coll('weeks');
   },
-  isOwner(){ return this.ledger && Auth.uid() === this.ledger.owner; },
+  isOwner(){ return !!this.ledger && (Auth.uid() === this.ledger.owner || (this.ledger.admins||[]).includes(Auth.email())); },
 
   /* ── Paths (kept from the single-file version) ── */
   path(p){

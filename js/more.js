@@ -263,6 +263,7 @@ const Settings = {
       <div class="section"><div class="section-head"><h2>Accounts</h2><button class="link" style="background:none" onclick="Accounts.open()">Month-end check-in →</button></div>${Editors.accounts(d)}
         <p class="hint" style="margin-top:8px">Balances here are what the app expects after your deposits. At month end, enter your real balances and the difference (interest, market gains or losses) is added to the linked fund.</p></div>
       <div class="section"><div class="section-head"><h2>Rules</h2></div>${Editors.rules(d)}</div>
+      ${store.ledger?.joint ? '' : `<div class="section"><div class="section-head"><h2>Joint budget</h2></div>${Joint.renderSettings()}</div>`}
       <div class="section"><div class="section-head"><h2>Appearance</h2></div>${Appearance.renderSection()}</div>
       <div class="section"><div class="section-head"><h2>Reminders on this device</h2></div>
         <div class="card"><p style="font-size:13.5px;color:var(--text-2)">A daily nudge at your reminder hour if nobody has logged tips to this budget yet that day — and a heads-up on close-week day. Works even when the app is closed.</p>
@@ -395,6 +396,7 @@ const Setup = {
   go(i){ App.setupStep = Math.max(0, Math.min(this.steps.length-1, i)); window.scrollTo({top:0}); this.render(); },
   async finish(){
     const d = App.draft; d.setupDone = true; d.createdAt = new Date().toISOString();
+    if (store.ledger?.joint) d.remindEnabled = false;   // a joint budget isn’t fed by shifts
     d.permFunds.forEach(f=>{ f.pct=+f.pct||0; f.amount=round2(f.amount); f.balance=round2(f.balance); f.mode=f.mode==='fixed'?'fixed':'pct'; }); d.bills.forEach(b=>{ b.period=b.period||'month'; }); d.accounts.forEach(a=>{ a.balance=round2(a.balance); a.split=(a.split||[]).filter(x=>x.name||+x.pct); });
     try { await store.saveSettings(d); if (!store.state.weekStart) await store.saveState({ weekStart: new Date().toISOString().replace(/Z$/,''), weekCount:0 }); } catch(e){ return; }
     App.draft = null; App.dirty = false; App.go('home'); toast('Welcome to your ledger');

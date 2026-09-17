@@ -50,6 +50,7 @@ const catKind = (s, id) => s.weeklyFunds.some(f=>f.id===id) ? 'weekly' : s.permF
 function notices(s, c){
   const out = [];
   const now = new Date(); const mk = monthKey(todayISO());
+  Joint.pendingForMe().forEach(i => out.push({ cls:'pink', icon:ICON.spark, t:`${i.fromName||i.fromEmail} invited you to “${i.name}”`, d:'A joint budget you’d both own and contribute to each week.', go:['Review', `Joint.review('${i.id}')`] }));
   if (s.permFunds.some(f=>f.mode!=='fixed') && Math.abs(c.pctTotal - 100) > 0.01) out.push({ cls:'warn', icon:ICON.alert, t:`Fund percentages add up to ${round2(c.pctTotal)}%`, d:'They need to total 100% so every leftover dollar has a home.', go:['Fix', "App.go('settings')"] });
   const due = s.bills.filter(b => +b.amount>0 && (b.period||'month')==='month' && !Model.billPaid(b, mk)).map(b=>({b, d:Model.billDays(b, now)})).filter(x=>x.d<=5).sort((a,b)=>a.d-b.d);
   if (due.length) {

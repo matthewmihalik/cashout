@@ -6,16 +6,23 @@ service cloud.firestore {
     function email() { return request.auth.token.email.lower(); }
     function ledger(lid) { return get(/databases/$(database)/documents/ledgers/$(lid)).data; }
     function isMember(lid) { return signedIn() && email() in ledger(lid).members; }
-    function isOwner(lid) { return signedIn() && request.auth.uid == ledger(lid).owner; }
+    function isOwner(lid) { return signedIn() && (request.auth.uid == ledger(lid).owner || email() in ledger(lid).get('admins', [])); }
+    function invite(id) { return get(/databases/$(database)/documents/invites/$(id)).data; }
 
     // A budget ("ledger"): readable by its members; created by the signed-in user for themselves;
     // renamed / re-shared / deleted only by its owner.
     match /ledgers/{lid} {
       allow read: if signedIn() && email() in resource.data.members;
+      // A personal budget lists only its creator; a joint budget may also list the person who invited
+      // this user (proved by an invitation addressed to them).
       allow create: if signedIn()
         && request.resource.data.owner == request.auth.uid
         && request.resource.data.ownerEmail == email()
-        && request.resource.data.members == [email()];
+        && ( request.resource.data.members == [email()]
+          || ( request.resource.data.inviteId is string
+            && invite(request.resource.data.inviteId).toEmail == email()
+            && request.resource.data.members.size() == 2
+            && request.resource.data.members.hasAll([email(), invite(request.resource.data.inviteId).fromEmail]) ) );
       allow update: if isOwner(lid)
         && request.resource.data.owner == resource.data.owner
         && request.resource.data.ownerEmail == resource.data.ownerEmail
@@ -26,6 +33,16 @@ service cloud.firestore {
       match /{sub}/{doc} {
         allow read, write: if isMember(lid);
       }
+    }
+
+    // Joint-budget invitations: the sender creates and may cancel; the recipient may accept or decline;
+    // the sender may mark it done once their own budget is linked.
+    match /invites/{id} {
+      allow read: if signedIn() && (resource.data.fromEmail == email() || resource.data.toEmail == email());
+      allow create: if signedIn() && request.resource.data.fromEmail == email() && request.resource.data.status == 'pending';
+      allow update: if signedIn() && (resource.data.toEmail == email() || resource.data.fromEmail == email())
+        && request.resource.data.fromEmail == resource.data.fromEmail && request.resource.data.toEmail == resource.data.toEmail;
+      allow delete: if signedIn() && (resource.data.fromEmail == email() || resource.data.toEmail == email());
     }
 
     // Push tokens: each device writes its own, tagged with the signed-in email.

@@ -85,6 +85,23 @@ const server = http.createServer((req, res) => {
   await page.evaluate(() => { Sheet.close(); const j = store.ledgers.find(l=>l.name.startsWith('Jordan')); store.select(j.id); }); await page.waitForTimeout(500);
   const jointIncome = await page.evaluate(() => store.allTips().map(e=>[e.type, e.total, e.source]));
   console.log('joint income:', JSON.stringify(jointIncome));
+  // ── invitation flow: Matt invites partner → partner accepts → joint ledger + both contribution funds
+  await page.evaluate(() => { const m = store.ledgers.find(l=>l.name.startsWith('Matt')); store.select(m.id); }); await page.waitForTimeout(400);
+  await page.evaluate(() => Joint.start()); await page.waitForTimeout(150);
+  await page.fill('#jName', 'Our place'); await page.fill('#jEmail', 'partner@example.com'); await page.fill('#jCVal', '150'); await shot('18-joint-invite', false);
+  await page.click('#jSend'); await page.waitForTimeout(400);
+  await page.evaluate(() => App.go('settings')); await page.waitForTimeout(250); await shot('19-joint-pending');
+  await page.evaluate(() => window.__mock.signIn('partner@example.com')); await page.waitForTimeout(700);
+  await shot('20-partner-home');
+  const invId = await page.evaluate(() => Joint.pendingForMe()[0]?.id);
+  await page.evaluate(id => Joint.review(id), invId); await page.waitForTimeout(200); await shot('21-review', false);
+  await page.selectOption('#aCMode', 'pct'); await page.fill('#aCValPct', '25'); await page.click('#jAccept'); await page.waitForTimeout(800);
+  await shot('22-joint-setup');
+  const afterAccept = await page.evaluate(() => ({ ledgers: store.ledgers.map(l=>[l.name, l.members.length, !!l.joint]), current: store.ledger?.name, invite: store.invites.map(i=>[i.status, !!i.ledgerId]) }));
+  console.log('after accept:', JSON.stringify(afterAccept));
+  await page.evaluate(() => window.__mock.signIn('matt@example.com')); await page.waitForTimeout(900);
+  const linked = await page.evaluate(() => { const m = store.ledgers.find(l=>l.name.startsWith('Matt')); const s = window.__mock.docs['ledgers/'+m.id+'/data/settings']; return { mattFunds: s.permFunds.filter(f=>f.linkTo).map(f=>[f.name, f.mode, f.amount, f.pct]), inviteLinked: store.invites.map(i=>[i.status, !!i.linked]) }; });
+  console.log('linked:', JSON.stringify(linked));
 
   // sanity: state after close
   const state = await page.evaluate(() => ({ ledgers: store.ledgers.map(l=>[l.name, l.members]), weeks: Object.keys(window.__mock.docs).filter(k=>k.includes('/weeks/')).length, income: store.allTips().map(e=>[e.type,e.total]),
